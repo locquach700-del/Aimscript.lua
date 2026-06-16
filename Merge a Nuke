@@ -1,0 +1,206 @@
+-- [[ NUKE AUTO MERGE v15 - TỰ ĐỘNG NHẬN DIỆN VỊ TRÍ BASE TRÊN RAYFIELD ]]
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Khởi tạo cấu hình mặc định
+getgenv().TargetBaseNumber = "4" 
+getgenv().AutoMergeActive = false
+local CurrentStandingBase = "Chưa xác định" -- Biến lưu Base bạn đang đứng
+
+local BasesFolder = Workspace:FindFirstChild("Bases") or Workspace:FindFirstChild("Bases", true)
+local NukeRemotes = ReplicatedStorage:FindFirstChild("NukeRemotes")
+local DropRemote = NukeRemotes and (NukeRemotes:FindFirstChild("Drop") or NukeRemotes:FindFirstChild("DropNuke") or NukeRemotes:FindFirstChild("Place"))
+
+-- 1. Tạo Cửa Sổ Chính Rayfield
+local Window = Rayfield:CreateWindow({
+   Name = "⚡ Rayfield Hub | Auto Nuke",
+   LoadingTitle = "Nuke Merger System",
+   LoadingSubtitle = "Đang quét tọa độ bản đồ...",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false 
+})
+
+-- 2. Tạo Các Tab Menu
+local GeneralTab = Window:CreateTab("General", 4483362458)
+local AutomationTab = Window:CreateTab("Automation", 4483362458)
+local DeacherTab = Window:CreateTab("Deacher", 4483362458)
+
+-- 3. 🛑 DÒNG TEXT HIỂN THỊ VỊ TRÍ BẠN ĐANG ĐỨNG (Cập nhật tự động)
+local StandingParagraph = AutomationTab:CreateParagraph({
+    Title = "👁️ VỊ TRÍ THỰC TẾ CỦA BẠN", 
+    Content = "Bạn đang đứng tại khu vực: [ Đang quét vị trí... ]"
+})
+
+-- 4. Dòng text hiển thị Base mà script sẽ hack (Mục tiêu)
+local BaseParagraph = AutomationTab:CreateParagraph({
+    Title = "📍 BASE MỤC TIÊU HACK", 
+    Content = "Script đang lệnh gộp tại Base số: [ " .. getgenv().TargetBaseNumber .. " ]"
+})
+
+-- 5. Ô Nhập Số Base
+local BaseInput = AutomationTab:CreateInput({
+   Name = "Nhập Số Base Cần Hack (Nhìn số ở trên để nhập)",
+   PlaceholderText = "Ví dụ: 4",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+        local num = tonumber(Text)
+        if num and num >= 1 and num <= 8 then
+            getgenv().TargetBaseNumber = tostring(num)
+            
+            BaseParagraph:Set({
+                Title = "📍 BASE MỤC TIÊU HACK",
+                Content = "Script đang lệnh gộp tại Base số: [ " .. getgenv().TargetBaseNumber .. " ]"
+            })
+        end
+   end,
+})
+
+-- 6. Nút Gạt Bật/Tắt Auto Merge
+local MergeToggle = AutomationTab:CreateToggle({
+   Name = "Kích Hoạt Auto Merge (Slow Mode)",
+   CurrentValue = false,
+   Flag = "AutoMergeToggle",
+   Callback = function(Value)
+        getgenv().AutoMergeActive = Value
+   end,
+})
+
+-- ========================================================
+--  HỆ THỐNG KIỂM TRA TỌA ĐỘ: BẠN ĐANG ĐỨNG Ở BASE MẤY?
+-- ========================================================
+task.spawn(function()
+    while true do
+        local character = Player.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        
+        if hrp and BasesFolder then
+            local closestBase = "Không ở trong Base nào"
+            local shortestDistance = math.huge
+            
+            -- Quét qua cả 8 Base trên map để xem bạn đang ở gần tâm Base nào nhất
+            for i = 1, 8 do
+                local baseFrame = BasesFolder:FindFirstChild("Base" .. i)
+                if baseFrame then
+                    -- Thường Base sẽ có một Part nền chính (ví dụ "BuildArea", "Floor", "Platform" hoặc chính nó)
+                    local corePart = baseFrame:FindFirstChild("BuildArea") or baseFrame:FindFirstChild("Floor") or baseFrame:FindFirstChildOfClass("Part") or baseFrame
+                    if corePart and corePart:IsA("BasePart") then
+                        local distance = (hrp.Position - corePart.Position).Magnitude
+                        -- Nếu khoảng cách nhỏ hơn 65 studs tức là bạn đang đứng bên trong khu đất đó
+                        if distance < 65 and distance < shortestDistance then
+                            shortestDistance = distance
+                            closestBase = tostring(i)
+                        end
+                    end
+                end
+            end
+            
+            -- Nếu phát hiện bạn vừa bước sang Base khác, cập nhật chữ trên UI ngay
+            if CurrentStandingBase ~= closestBase then
+                CurrentStandingBase = closestBase
+                if closestBase ~= "Không ở trong Base nào" then
+                    StandingParagraph:Set({
+                        Title = "👁️ VỊ TRÍ THỰC TẾ CỦA BẠN",
+                        Content = "Bạn đang đứng tại khu vực: Base Số [ " .. closestBase .. " ]"
+                    })
+                else
+                    StandingParagraph:Set({
+                        Title = "👁️ VỊ TRÍ THỰC TẾ CỦA BẠN",
+                        Content = "Bạn đang đứng tại khu vực: [ Ngoài rìa / Giữa đường ]"
+                    })
+                end
+            end
+        end
+        task.wait(0.5) -- Cứ mỗi 0.5 giây kiểm tra vị trí một lần cho mượt, không lo lag game
+    end
+end)
+
+-- ========================================================
+--  HỆ THỐNG GAMEPLAY QUÉT VÀ GỘP NUKE (GIỮ NGUYÊN)
+-- ========================================================
+local function getNukeData(nuke)
+    local level = nil
+    local targetPart = nil
+    local billboard = nuke:FindFirstChildOfClass("BillboardGui") or nuke:FindFirstChild(true)
+    if billboard and billboard:FindFirstChildOfClass("TextLabel") then
+        level = tonumber(billboard:FindFirstChildOfClass("TextLabel").Text)
+        targetPart = billboard.Parent
+    end
+    if not level then
+        local levelObj = nuke:FindFirstChild("Level") or nuke:FindFirstChild("level")
+        if levelObj and levelObj:IsA("ValueBase") then level = tonumber(levelObj.Value) end
+        level = level or tonumber(nuke.Name) or 1
+        targetPart = nuke:IsA("BasePart") and nuke or nuke.PrimaryPart or nuke:FindFirstChildOfClass("BasePart")
+    end
+    return level, targetPart
+end
+
+local function forceDropNuke()
+    if DropRemote then pcall(function() DropRemote:FireServer() end) end
+    local character = Player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if humanoid and hrp then
+        hrp.CFrame = hrp.CFrame + Vector3.new(0, 6, 0)
+        humanoid.Jump = true
+    end
+    task.wait(0.2)
+end
+
+local function teleportToPart(part)
+    local character = Player.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if hrp and part and part:IsA("BasePart") then
+        for _, p in pairs(character:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+        hrp.CFrame = part.CFrame + Vector3.new(0, 1.2, 0)
+        task.wait(0.45)
+    end
+end
+
+task.spawn(function()
+    while true do
+        if getgenv().AutoMergeActive and BasesFolder then
+            local currentBase = BasesFolder:FindFirstChild("Base" .. tostring(getgenv().TargetBaseNumber))
+            local nukeFolder = currentBase and (currentBase:FindFirstChild("Nukes") or currentBase:FindFirstChild("Nuke"))
+            
+            if nukeFolder then
+                local allNukes = nukeFolder:GetChildren()
+                local nukeList = {}
+                for _, nuke in ipairs(allNukes) do
+                    local lvl, part = getNukeData(nuke)
+                    if lvl and part then table.insert(nukeList, {instance = nuke, level = lvl, part = part}) end
+                end
+                
+                table.sort(nukeList, function(a, b) return a.level < b.level end)
+                local mergedThisTick = false
+                
+                for i = 1, #nukeList do
+                    if mergedThisTick or not getgenv().AutoMergeActive then break end
+                    local nukeA = nukeList[i]
+                    if nukeA.instance.Parent and nukeA.part.Parent then
+                        for j = i + 1, #nukeList do
+                            local nukeB = nukeList[j]
+                            if nukeB.instance.Parent and nukeB.part.Parent and nukeA.level == nukeB.level then
+                                teleportToPart(nukeA.part)
+                                task.wait(0.2)
+                                teleportToPart(nukeB.part)
+                                task.wait(0.25)
+                                if nukeA.instance.Parent or nukeB.instance.Parent then forceDropNuke() end
+                                mergedThisTick = true
+                                break
+                            end
+                        end
+                    end
+                end
+                if not mergedThisTick then forceDropNuke() end
+            end
+        end
+        task.wait(0.6)
+    end
+end)
