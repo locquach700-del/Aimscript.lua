@@ -18,7 +18,7 @@ local DropRemote = NukeRemotes and (NukeRemotes:FindFirstChild("Drop") or NukeRe
 
 -- 1. Tạo Cửa Sổ Chính Rayfield
 local Window = Rayfield:CreateWindow({
-   Name = "⚡ Rayfield Hub | Auto Nuke",
+   Name = "⚡ L Hub | Merge a Nuke",
    LoadingTitle = "Nuke Merger System",
    LoadingSubtitle = "Đang quét tọa độ bản đồ...",
    ConfigurationSaving = { Enabled = false },
